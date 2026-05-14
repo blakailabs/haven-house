@@ -1,53 +1,150 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { 
   Bed, 
-  UserPlus, 
-  UserMinus, 
-  Lock, 
-  MoreVertical, 
+  Search, 
+  ArrowLeft, 
   Plus, 
-  Search,
-  CheckCircle2,
-  AlertTriangle,
-  ArrowLeft,
-  Settings2,
-  MapPin
+  CheckCircle2, 
+  Settings2, 
+  MapPin, 
+  Lock, 
+  AlertTriangle, 
+  UserPlus, 
+  UserMinus,
+  Trash2,
+  Edit
 } from 'lucide-react';
-import Link from 'next/link';
+import { db } from '@/lib/firebase/clientApp';
+import { collection, onSnapshot, query, orderBy, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 
 interface BedData {
   id: string;
-  room: string;
-  status: 'occupied' | 'available' | 'maintenance';
+  roomName: string;
+  isOccupied: boolean;
+  status?: 'occupied' | 'available' | 'maintenance';
   residentName?: string;
   residentId?: string;
   lockboxId?: string;
   notes?: string;
 }
 
-const INITIAL_BEDS: BedData[] = [
-  { id: '101-A', room: 'Room 101', status: 'occupied', residentName: 'John Doe', lockboxId: 'LB-001' },
-  { id: '101-B', room: 'Room 101', status: 'available', lockboxId: 'LB-002' },
-  { id: '102-A', room: 'Room 102', status: 'maintenance', lockboxId: 'LB-003', notes: 'Needs mattress replacement' },
-  { id: '102-B', room: 'Room 102', status: 'available', lockboxId: 'LB-004' },
-];
-
 export default function BedManagementPage() {
-  const [beds, setBeds] = useState<BedData[]>(INITIAL_BEDS);
+  const [beds, setBeds] = useState<BedData[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingBed, setEditingBed] = useState<BedData | null>(null);
+  const [formData, setFormData] = useState<Partial<BedData>>({
+    roomName: '',
+    status: 'available',
+    isOccupied: false,
+    lockboxId: '',
+    notes: '',
+    residentName: ''
+  });
   
+  React.useEffect(() => {
+    if (!db) return;
+
+    const q = query(collection(db, 'beds'), orderBy('roomName', 'asc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as BedData[];
+      setBeds(data);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   const stats = {
     total: beds.length,
-    occupied: beds.filter(b => b.status === 'occupied').length,
-    available: beds.filter(b => b.status === 'available').length,
+    occupied: beds.filter(b => b.isOccupied).length,
+    available: beds.filter(b => !b.isOccupied && b.status !== 'maintenance').length,
     maintenance: beds.filter(b => b.status === 'maintenance').length,
   };
 
-  const addBed = () => {
-    const newId = `BED-${Math.floor(Math.random() * 900) + 100}`;
-    setBeds([...beds, { id: newId, room: 'New Room', status: 'available', lockboxId: `LB-${newId.split('-')[1]}` }]);
+  const handleOpenModal = (bed?: BedData) => {
+    if (bed) {
+      setEditingBed(bed);
+      setFormData(bed);
+    } else {
+      setEditingBed(null);
+      setFormData({
+        roomName: '',
+        status: 'available',
+        isOccupied: false,
+        lockboxId: '',
+        notes: '',
+        residentName: ''
+      });
+    }
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setEditingBed(null);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!db) return;
+    
+    // Auto-update isOccupied based on status
+    const isOccupied = formData.status === 'occupied';
+    
+    try {
+      if (editingBed) {
+        await updateDoc(doc(db, 'beds', editingBed.id), {
+          ...formData,
+          isOccupied,
+          updatedAt: serverTimestamp()
+        });
+      } else {
+        await addDoc(collection(db, 'beds'), {
+          ...formData,
+          isOccupied,
+          createdAt: serverTimestamp()
+        });
+      }
+      handleCloseModal();
+    } catch (err) {
+      console.error("Error saving bed:", err);
+      alert('Failed to save bed');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!db) return;
+    if (window.confirm('Are you sure you want to delete this bed?')) {
+      try {
+        await deleteDoc(doc(db, 'beds', id));
+      } catch (err) {
+        console.error('Error deleting bed:', err);
+        alert('Failed to delete bed');
+      }
+    }
+  };
+
+  const handleDischarge = async (id: string) => {
+    if (!db) return;
+    if (window.confirm('Are you sure you want to discharge the resident from this bed?')) {
+      try {
+        await updateDoc(doc(db, 'beds', id), {
+          status: 'available',
+          isOccupied: false,
+          residentName: '',
+          residentId: '',
+          updatedAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.error('Error discharging resident:', err);
+      }
+    }
   };
 
   return (
@@ -81,7 +178,7 @@ export default function BedManagementPage() {
               />
             </div>
             <button 
-              onClick={addBed}
+              onClick={() => handleOpenModal()}
               className="flex items-center px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20"
             >
               <Plus className="w-4 h-4 mr-2" />
@@ -114,16 +211,29 @@ export default function BedManagementPage() {
                   }`}>
                     <Bed className="w-6 h-6" />
                   </div>
-                  <button className="p-2 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors">
-                    <MoreVertical className="w-5 h-5" />
-                  </button>
+                  <div className="flex gap-1">
+                    <button 
+                      onClick={() => handleOpenModal(bed)}
+                      className="p-2 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-blue-500 rounded-lg transition-colors"
+                      title="Edit Bed"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(bed.id)}
+                      className="p-2 text-zinc-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 rounded-lg transition-colors"
+                      title="Delete Bed"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mb-4">
-                  <h3 className="text-xl font-bold text-zinc-900 dark:text-white mb-1">{bed.id}</h3>
+                  <h3 className="text-xl font-bold text-zinc-900 dark:text-white mb-1">{bed.roomName}</h3>
                   <p className="text-sm text-zinc-500 dark:text-zinc-400 flex items-center">
                     <MapPin className="w-3 h-3 mr-1" />
-                    {bed.room}
+                    {bed.status === 'occupied' ? 'Assigned' : 'Available'}
                   </p>
                 </div>
 
@@ -146,7 +256,10 @@ export default function BedManagementPage() {
                       <p className="text-xs text-orange-600/70 dark:text-orange-400/70">{bed.notes}</p>
                     </div>
                   ) : (
-                    <button className="w-full py-4 px-4 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl flex flex-col items-center justify-center text-zinc-400 hover:border-blue-400 hover:text-blue-500 transition-all">
+                    <button 
+                      onClick={() => handleOpenModal(bed)}
+                      className="w-full py-4 px-4 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl flex flex-col items-center justify-center text-zinc-400 hover:border-blue-400 hover:text-blue-500 transition-all"
+                    >
                       <UserPlus className="w-5 h-5 mb-1" />
                       <span className="text-sm font-bold">Assign Resident</span>
                     </button>
@@ -163,7 +276,10 @@ export default function BedManagementPage() {
                   {bed.status}
                 </span>
                 {bed.status === 'occupied' && (
-                  <button className="text-xs font-bold text-red-600 dark:text-red-400 hover:underline flex items-center">
+                  <button 
+                    onClick={() => handleDischarge(bed.id)}
+                    className="text-xs font-bold text-red-600 dark:text-red-400 hover:underline flex items-center"
+                  >
                     <UserMinus className="w-3 h-3 mr-1" />
                     Discharge
                   </button>
@@ -173,6 +289,96 @@ export default function BedManagementPage() {
           ))}
         </div>
       </div>
+
+      {/* Bed Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 w-full max-w-md shadow-2xl">
+            <h2 className="text-2xl font-bold mb-6 text-zinc-900 dark:text-white">
+              {editingBed ? 'Edit Bed' : 'Add New Bed'}
+            </h2>
+            <form onSubmit={handleSave} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Room/Bed Name</label>
+                <input 
+                  required
+                  type="text"
+                  value={formData.roomName || ''}
+                  onChange={(e) => setFormData({...formData, roomName: e.target.value})}
+                  className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-zinc-900 dark:text-white"
+                  placeholder="e.g. Room 101A"
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Status</label>
+                  <select 
+                    value={formData.status || 'available'}
+                    onChange={(e) => setFormData({...formData, status: e.target.value as 'available' | 'occupied' | 'maintenance'})}
+                    className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-zinc-900 dark:text-white"
+                  >
+                    <option value="available">Available</option>
+                    <option value="occupied">Occupied</option>
+                    <option value="maintenance">Maintenance</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Lockbox ID</label>
+                  <input 
+                    type="text"
+                    value={formData.lockboxId || ''}
+                    onChange={(e) => setFormData({...formData, lockboxId: e.target.value})}
+                    className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-zinc-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              {formData.status === 'occupied' && (
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Resident Name</label>
+                  <input 
+                    type="text"
+                    required={formData.status === 'occupied'}
+                    value={formData.residentName || ''}
+                    onChange={(e) => setFormData({...formData, residentName: e.target.value})}
+                    className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-zinc-900 dark:text-white"
+                    placeholder="Enter resident's name"
+                  />
+                </div>
+              )}
+
+              {formData.status === 'maintenance' && (
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Maintenance Notes</label>
+                  <textarea 
+                    value={formData.notes || ''}
+                    onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                    className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-zinc-900 dark:text-white h-24 resize-none"
+                    placeholder="Describe maintenance required..."
+                  />
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 mt-8">
+                <button 
+                  type="button" 
+                  onClick={handleCloseModal}
+                  className="px-4 py-2 font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/20"
+                >
+                  Save Bed
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

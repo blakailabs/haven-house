@@ -1,6 +1,4 @@
-'use client';
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   FileText, 
   Search, 
@@ -12,31 +10,60 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
-  ArrowLeft
+  ArrowLeft,
+  Calendar
 } from 'lucide-react';
 import Link from 'next/link';
+import { db } from '@/lib/firebase/clientApp';
+import { collection, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 interface Referral {
   id: string;
-  name: string;
-  source: string;
+  clientName: string;
+  sourceType: string;
+  sourceName: string;
   status: 'pending' | 'assessing' | 'approved' | 'denied';
-  date: string;
-  phone: string;
-  notes: string;
+  createdAt: any;
+  sourcePhone: string;
+  reason: string;
 }
 
-const INITIAL_REFERRALS: Referral[] = [
-  { id: 'REF-001', name: 'Marcus Wright', source: 'Shelby County Jail', status: 'pending', date: '2026-05-06', phone: '(555) 123-4567', notes: 'Needs housing before parole date on 5/15.' },
-  { id: 'REF-002', name: 'James Wilson', source: 'Regional Hospital', status: 'assessing', date: '2026-05-06', phone: '(555) 987-6543', notes: 'Currently in detox, ready for discharge Monday.' },
-  { id: 'REF-003', name: 'Sarah Miller', source: 'Self-Referral', status: 'pending', date: '2026-05-05', phone: '(555) 456-7890', notes: 'Seeking stable environment after relapse.' },
-  { id: 'REF-004', name: 'Robert Taylor', source: 'Jefferson County Jail', status: 'approved', date: '2026-05-04', phone: '(555) 222-3333', notes: 'Assigned to Bed 101-B.' },
-  { id: 'REF-005', name: 'Michael Brown', source: 'VA Hospital', status: 'denied', date: '2026-05-03', phone: '(555) 777-8888', notes: 'Requires level of care beyond house capabilities.' },
-];
-
 export default function ReferralsPage() {
-  const [referrals, setReferrals] = useState<Referral[]>(INITIAL_REFERRALS);
+  const [referrals, setReferrals] = useState<Referral[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    if (!db) return;
+
+    const q = query(collection(db, 'referrals'), orderBy('createdAt', 'desc'));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const referralData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Referral[];
+      
+      setReferrals(referralData);
+      setLoading(false);
+    }, (error) => {
+      console.error("Error fetching referrals:", error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleUpdateStatus = async (id: string, newStatus: string) => {
+    if (!db) return;
+    try {
+      await updateDoc(doc(db, 'referrals', id), {
+        status: newStatus
+      });
+    } catch (error) {
+      console.error("Error updating status:", error);
+    }
+  };
 
   const statusColors = {
     pending: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
@@ -46,9 +73,16 @@ export default function ReferralsPage() {
   };
 
   const filteredReferrals = referrals.filter(ref => 
-    ref.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    ref.source.toLowerCase().includes(searchTerm.toLowerCase())
+    ref.clientName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    ref.sourceName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    ref.sourceType?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const formatDate = (timestamp: any) => {
+    if (!timestamp) return 'N/A';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleDateString();
+  };
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
@@ -89,59 +123,88 @@ export default function ReferralsPage() {
         {/* Referrals List */}
         <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xl overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-100 dark:border-zinc-800">
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Applicant</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Source</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Date Received</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Status</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {filteredReferrals.map((ref) => (
-                  <tr key={ref.id} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors group">
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold dark:bg-blue-900/30">
-                          {ref.name[0]}
-                        </div>
-                        <div>
-                          <p className="font-bold text-zinc-900 dark:text-white">{ref.name}</p>
-                          <p className="text-xs text-zinc-500">{ref.phone}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-5">
-                      <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{ref.source}</p>
-                    </td>
-                    <td className="px-6 py-5 text-sm text-zinc-500">
-                      {ref.date}
-                    </td>
-                    <td className="px-6 py-5">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${statusColors[ref.status]}`}>
-                        {ref.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors" title="Approve">
-                          <CheckCircle2 className="w-5 h-5" />
-                        </button>
-                        <button className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors" title="Deny">
-                          <XCircle className="w-5 h-5" />
-                        </button>
-                        <button className="p-2 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors">
-                          <MoreVertical className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </td>
+            {loading ? (
+              <div className="p-12 flex justify-center">
+                <div className="h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-100 dark:border-zinc-800">
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Applicant</th>
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Source</th>
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Date Received</th>
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Status</th>
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {filteredReferrals.map((ref) => (
+                    <tr key={ref.id} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors group">
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold dark:bg-blue-900/30">
+                            {ref.clientName ? ref.clientName[0] : 'U'}
+                          </div>
+                          <div>
+                            <p className="font-bold text-zinc-900 dark:text-white">{ref.clientName}</p>
+                            <p className="text-xs text-zinc-500">{ref.sourcePhone}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{ref.sourceName}</p>
+                        <p className="text-xs text-zinc-500">{ref.sourceType}</p>
+                      </td>
+                      <td className="px-6 py-5 text-sm text-zinc-500">
+                        {formatDate(ref.createdAt)}
+                      </td>
+                      <td className="px-6 py-5">
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${statusColors[ref.status || 'pending']}`}>
+                          {ref.status || 'pending'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button 
+                            onClick={() => handleUpdateStatus(ref.id, 'approved')}
+                            className="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors" 
+                            title="Approve"
+                          >
+                            <CheckCircle2 className="w-5 h-5" />
+                          </button>
+                          <button 
+                            onClick={() => handleUpdateStatus(ref.id, 'denied')}
+                            className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors" 
+                            title="Deny"
+                          >
+                            <XCircle className="w-5 h-5" />
+                          </button>
+                          <button 
+                            onClick={() => handleUpdateStatus(ref.id, 'assessing')}
+                            className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors" 
+                            title="Mark as Assessing"
+                          >
+                            <Clock className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
+          
+          {!loading && filteredReferrals.length === 0 && (
+            <div className="p-12 text-center">
+              <AlertCircle className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
+              <p className="text-zinc-500 dark:text-zinc-400">No referrals found matching your search.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
           
           {filteredReferrals.length === 0 && (
             <div className="p-12 text-center">

@@ -14,18 +14,57 @@ import {
   Send,
   CheckCircle2
 } from 'lucide-react';
+import { db } from '@/lib/firebase/clientApp';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 export default function ReferralPage() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const [formData, setFormData] = useState({
+    sourceType: 'Select source...',
+    sourceName: '',
+    sourceEmail: '',
+    sourcePhone: '',
+    clientName: '',
+    clientDob: '',
+    clientLocation: '',
+    clientInmateId: '',
+    dischargeDate: '',
+    reason: '',
+    healthNotes: '',
+    legalStatus: '',
+  });
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setLoading(false);
-    setSubmitted(true);
+    
+    try {
+      if (db) {
+        await addDoc(collection(db, 'referrals'), {
+          ...formData,
+          status: 'pending',
+          createdAt: serverTimestamp(),
+        });
+        setSubmitted(true);
+      } else {
+        // Fallback for mock mode
+        console.warn('Firestore not configured, simulating submission');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        setSubmitted(true);
+      }
+    } catch (error) {
+      console.error('Error submitting referral:', error);
+      alert('Failed to submit referral. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (submitted) {
@@ -51,7 +90,7 @@ export default function ReferralPage() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 py-12 px-4 sm:px-6 lg:px-8 font-sans">
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="text-center mb-12">
@@ -60,7 +99,7 @@ export default function ReferralPage() {
               <ClipboardCheck className="w-8 h-8 text-white" />
             </div>
           </div>
-          <h1 className="text-3xl font-extrabold text-zinc-900 dark:text-white sm:text-4xl">
+          <h1 className="text-3xl font-extrabold text-zinc-900 dark:text-white sm:text-4xl tracking-tight">
             Resident Referral Form
           </h1>
           <p className="mt-4 text-lg text-zinc-600 dark:text-zinc-400">
@@ -85,7 +124,12 @@ export default function ReferralPage() {
                   <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
                     Source Type
                   </label>
-                  <select className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                  <select 
+                    name="sourceType"
+                    value={formData.sourceType}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"
+                  >
                     <option>Select source...</option>
                     <option>Jail/Correctional Facility</option>
                     <option>Hospital/Treatment Center</option>
@@ -101,6 +145,9 @@ export default function ReferralPage() {
                   </label>
                   <input 
                     type="text" 
+                    name="sourceName"
+                    value={formData.sourceName}
+                    onChange={handleChange}
                     placeholder="Enter name"
                     className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                     required
@@ -112,6 +159,9 @@ export default function ReferralPage() {
                   </label>
                   <input 
                     type="email" 
+                    name="sourceEmail"
+                    value={formData.sourceEmail}
+                    onChange={handleChange}
                     placeholder="email@example.com"
                     className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                     required
@@ -123,6 +173,9 @@ export default function ReferralPage() {
                   </label>
                   <input 
                     type="tel" 
+                    name="sourcePhone"
+                    value={formData.sourcePhone}
+                    onChange={handleChange}
                     placeholder="(555) 000-0000"
                     className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                     required
@@ -146,6 +199,9 @@ export default function ReferralPage() {
                   </label>
                   <input 
                     type="text" 
+                    name="clientName"
+                    value={formData.clientName}
+                    onChange={handleChange}
                     placeholder="Full legal name"
                     className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                     required
@@ -157,6 +213,9 @@ export default function ReferralPage() {
                   </label>
                   <input 
                     type="date" 
+                    name="clientDob"
+                    value={formData.clientDob}
+                    onChange={handleChange}
                     className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                     required
                   />
@@ -167,10 +226,43 @@ export default function ReferralPage() {
                   </label>
                   <input 
                     type="text" 
+                    name="clientLocation"
+                    value={formData.clientLocation}
+                    onChange={handleChange}
                     placeholder="e.g. Shelby County Jail"
                     className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                   />
                 </div>
+
+                {formData.sourceType === 'Jail/Correctional Facility' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                        Inmate ID / Booking #
+                      </label>
+                      <input 
+                        type="text" 
+                        name="clientInmateId"
+                        value={formData.clientInmateId}
+                        onChange={handleChange}
+                        placeholder="ID number"
+                        className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                        Expected Discharge Date
+                      </label>
+                      <input 
+                        type="date" 
+                        name="dischargeDate"
+                        value={formData.dischargeDate}
+                        onChange={handleChange}
+                        className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -188,6 +280,9 @@ export default function ReferralPage() {
                     Primary Reason for Referral
                   </label>
                   <textarea 
+                    name="reason"
+                    value={formData.reason}
+                    onChange={handleChange}
                     rows={3}
                     placeholder="Please describe the client's current situation and why Haven House is being considered."
                     className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none"
@@ -198,10 +293,26 @@ export default function ReferralPage() {
                     Medical/Mental Health Notes
                   </label>
                   <textarea 
+                    name="healthNotes"
+                    value={formData.healthNotes}
+                    onChange={handleChange}
                     rows={3}
                     placeholder="Any medications, diagnoses, or special needs we should be aware of."
                     className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none"
                   ></textarea>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                    Legal Status / Pending Charges
+                  </label>
+                  <input 
+                    type="text" 
+                    name="legalStatus"
+                    value={formData.legalStatus}
+                    onChange={handleChange}
+                    placeholder="e.g. Probation, Active Warrant, None"
+                    className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                  />
                 </div>
               </div>
             </div>
@@ -215,11 +326,11 @@ export default function ReferralPage() {
                     name="terms"
                     type="checkbox"
                     required
-                    className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-zinc-300 rounded-lg dark:bg-zinc-800 dark:border-zinc-700"
+                    className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-zinc-300 rounded-lg dark:bg-zinc-800 dark:border-zinc-700 cursor-pointer"
                   />
                 </div>
                 <div className="ml-3 text-sm">
-                  <label htmlFor="terms" className="font-medium text-zinc-700 dark:text-zinc-300">
+                  <label htmlFor="terms" className="font-medium text-zinc-700 dark:text-zinc-300 cursor-pointer">
                     I certify that the information provided is accurate to the best of my knowledge.
                   </label>
                   <p className="text-zinc-500 dark:text-zinc-400">
@@ -234,7 +345,7 @@ export default function ReferralPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex justify-center items-center py-4 px-6 border border-transparent text-lg font-bold rounded-2xl text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all shadow-xl shadow-blue-500/25 disabled:opacity-50"
+                className="w-full flex justify-center items-center py-4 px-6 border border-transparent text-lg font-bold rounded-2xl text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all shadow-xl shadow-blue-500/25 disabled:opacity-50 active:scale-[0.98]"
               >
                 {loading ? (
                   <div className="h-6 w-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>

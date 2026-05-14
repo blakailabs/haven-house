@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Users, 
   Bed, 
@@ -9,18 +9,99 @@ import {
   ArrowUpRight, 
   Plus,
   CheckCircle2,
+  Clock,
   ClipboardCheck
 } from 'lucide-react';
 import Link from 'next/link';
-
-const stats = [
-  { label: 'Active Residents', value: '12', icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
-  { label: 'Available Beds', value: '2', icon: Bed, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-  { label: 'Pending Referrals', value: '5', icon: FileText, color: 'text-amber-600', bg: 'bg-amber-50' },
-  { label: 'Tasks Today', value: '8', icon: CheckCircle2, color: 'text-purple-600', bg: 'bg-purple-50' },
-];
+import { db } from '@/lib/firebase/clientApp';
+import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 
 export default function AdminDashboard() {
+  const [referrals, setReferrals] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    activeResidents: '0',
+    availableBeds: '0',
+    pendingReferrals: '0',
+    tasksToday: '0'
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!db) return;
+
+    // Fetch recent referrals
+    const qReferrals = query(
+      collection(db, 'referrals'), 
+      orderBy('createdAt', 'desc'),
+      limit(5)
+    );
+    
+    const unsubscribeReferrals = onSnapshot(qReferrals, (snapshot) => {
+      const referralData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setReferrals(referralData);
+    });
+
+    // Listen to pending referrals count
+    const qPending = query(collection(db, 'referrals'));
+    const unsubscribePending = onSnapshot(qPending, (snapshot) => {
+      const pendingCount = snapshot.docs.filter(d => d.data().status === 'pending').length;
+      setStats(prev => ({ ...prev, pendingReferrals: pendingCount.toString() }));
+    });
+
+    // Listen to active residents
+    const qResidents = query(collection(db, 'residents'));
+    const unsubscribeResidents = onSnapshot(qResidents, (snapshot) => {
+      const activeCount = snapshot.docs.filter(d => d.data().status === 'active').length;
+      setStats(prev => ({ ...prev, activeResidents: activeCount.toString() }));
+    });
+
+    // Listen to available beds
+    const qBeds = query(collection(db, 'beds'));
+    const unsubscribeBeds = onSnapshot(qBeds, (snapshot) => {
+      const availableCount = snapshot.docs.filter(d => !d.data().isOccupied).length;
+      setStats(prev => ({ ...prev, availableBeds: availableCount.toString() }));
+    });
+
+    // Listen to tasks today
+    const today = new Date().toISOString().split('T')[0];
+    const qTasks = query(collection(db, 'tasks'));
+    const unsubscribeTasks = onSnapshot(qTasks, (snapshot) => {
+      const tasksToday = snapshot.docs.filter(d => d.data().dueDate === today && !d.data().completed).length;
+      setStats(prev => ({ ...prev, tasksToday: tasksToday.toString() }));
+      setLoading(false);
+    });
+
+    return () => {
+      unsubscribeReferrals();
+      unsubscribePending();
+      unsubscribeResidents();
+      unsubscribeBeds();
+      unsubscribeTasks();
+    };
+  }, []);
+
+  const statsConfig = [
+    { label: 'Active Residents', value: stats.activeResidents, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { label: 'Available Beds', value: stats.availableBeds, icon: Bed, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { label: 'Pending Referrals', value: stats.pendingReferrals, icon: FileText, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { label: 'Tasks Today', value: stats.tasksToday, icon: CheckCircle2, color: 'text-purple-600', bg: 'bg-purple-50' },
+  ];
+
+  const formatRelativeTime = (timestamp: any) => {
+    if (!timestamp) return 'Just now';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    return date.toLocaleDateString();
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
@@ -36,7 +117,7 @@ export default function AdminDashboard() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
+        {statsConfig.map((stat) => (
           <div key={stat.label} className="bg-white p-6 rounded-3xl border border-zinc-100 shadow-sm dark:bg-zinc-900 dark:border-zinc-800 transition-all hover:shadow-md">
             <div className="flex items-center justify-between mb-4">
               <div className={`p-3 rounded-2xl ${stat.bg} ${stat.color}`}>
@@ -60,24 +141,31 @@ export default function AdminDashboard() {
               <Link href="/admin/referrals" className="text-sm font-medium text-blue-600 hover:text-blue-500">View all</Link>
             </div>
             <div className="divide-y divide-zinc-50 dark:divide-zinc-800">
-              {[
-                { name: 'Marcus Wright', source: 'Shelby County Jail', status: 'Pending Review', date: '2 hours ago' },
-                { name: 'James Wilson', source: 'Regional Hospital', status: 'Needs Assessment', date: '5 hours ago' },
-                { name: 'Sarah Miller', source: 'Self-Referral', status: 'Pending Review', date: '1 day ago' },
-              ].map((ref, i) => (
-                <div key={i} className="p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors flex items-center justify-between">
+              {loading ? (
+                <div className="p-12 flex justify-center">
+                  <div className="h-6 w-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              ) : referrals.length === 0 ? (
+                <div className="p-12 text-center text-zinc-500">No referrals yet.</div>
+              ) : referrals.map((ref, i) => (
+                <div key={ref.id} className="p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold dark:bg-blue-900/30">
-                      {ref.name[0]}
+                      {ref.clientName ? ref.clientName[0] : 'U'}
                     </div>
                     <div>
-                      <h4 className="font-semibold text-zinc-900 dark:text-zinc-50">{ref.name}</h4>
-                      <p className="text-xs text-zinc-500">From: {ref.source} • {ref.date}</p>
+                      <h4 className="font-semibold text-zinc-900 dark:text-zinc-50">{ref.clientName}</h4>
+                      <p className="text-xs text-zinc-500">From: {ref.sourceName} • {formatRelativeTime(ref.createdAt)}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="px-3 py-1 rounded-full bg-amber-50 text-amber-600 text-[10px] font-bold uppercase tracking-wider border border-amber-100">
-                      {ref.status}
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                      ref.status === 'pending' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                      ref.status === 'approved' ? 'bg-green-50 text-green-600 border-green-100' :
+                      ref.status === 'denied' ? 'bg-red-50 text-red-600 border-red-100' :
+                      'bg-blue-50 text-blue-600 border-blue-100'
+                    }`}>
+                      {ref.status || 'Pending'}
                     </span>
                     <Link href={`/admin/referrals`} className="p-2 hover:bg-zinc-200 rounded-lg dark:hover:bg-zinc-700 transition-colors text-zinc-400">
                       <ArrowUpRight size={18} />

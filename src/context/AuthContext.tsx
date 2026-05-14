@@ -74,6 +74,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               const data = userDoc.data() as User;
               setCurrentUser(data);
             } else {
+              console.log("No user document found for UID:", user.uid);
               // If user is authenticated but no doc exists, we might need to create one or handle it
               // For now, we'll just set a basic profile
               setCurrentUser({
